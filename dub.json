@@ -1,0 +1,12 @@
+{
+	"authors": [
+		"karita"
+	],
+	"copyright": "Copyright © 2021, karita",
+	"dependencies": {
+		"libdparse": "~>0.18.1"
+	},
+	"description": "A D script for sorting import statements.",
+	"license": "BSL-1.0",
+	"name": "d-import-sort"
+}
