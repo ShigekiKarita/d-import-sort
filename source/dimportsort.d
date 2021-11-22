@@ -1,6 +1,6 @@
 module dimportsort;
 
-import std.algorithm : cmp, count, copy, map, setIntersection, sort;
+import std.algorithm : cmp, copy, count, map, setIntersection, sort, uniq;
 import std.array : array, join;
 import std.format : format;
 import std.stdio : writeln;
@@ -43,7 +43,7 @@ class ImportVisitor : ASTVisitor {
    */
   override void visit(const ImportDeclaration decl) {
     if (importGroups.empty ||
-        !isConsective(importGroups[$-1][$-1].decl, decl)) {
+        !isConsective(declGroups[$-1][$-1], decl)) {
       declGroups ~= [decl];
       importGroups ~= toIdentifiers(decl);
       return;
@@ -54,15 +54,36 @@ class ImportVisitor : ASTVisitor {
     decl.accept(this);
   }
 
+  struct Output {
+    string mod;
+    string[] binds;
+  }
+
   pure @safe
   string outputImports(ImportIdentifiers[] idents, string indent = "") const {
     // TODO: support max line length.
     sort(idents);
+    // Merge redundant modules.
+    Output[] outputs;
+    foreach (id; idents) {
+      if (outputs.empty || outputs[$-1].mod != id.name) {
+        outputs ~= Output(id.name, id.bindNames);
+        continue;
+      }
+      outputs[$-1].binds ~= id.bindNames;
+    }
+    
     string ret;
-    return idents.map!(id => indent ~ "import " ~ id.name ~ (
-        id.bindNames.empty
-        ? ";"
-        : " : " ~ id.bindNames.join(", ") ~ ";")).join("\n");
+    foreach (o; outputs) {
+      ret ~= indent ~ "import " ~ o.mod;
+      if (!o.binds.empty) {
+        sort(o.binds);
+        ret ~= " : " ~ o.binds.uniq.join(", ");
+      }
+      ret ~= ";\n";
+    }
+    // Remove the last new line (\n).
+    return ret[0 .. $-1];
   }
 
   string diff() {
@@ -117,6 +138,7 @@ ImportVisitor visitImports(string sourceCode, string fileName = "unittest") {
   return visitor;
 }
 
+/// Test for diff outputs.
 unittest {
   auto visitor = visitImports(q{
     import cc;
@@ -163,14 +185,11 @@ import foo;
 /// Data type for identifiers in an import declaration.
 /// import mod : binds, ...;
 class ImportIdentifiers {
-  this(const ImportDeclaration decl, const SingleImport si,
-       const ImportBind[] binds = []) {
-    this.decl = decl;
+  this(const SingleImport si, const ImportBind[] binds = []) {
     this.singleImport = si;
     this.binds = binds;
   }
 
-  const ImportDeclaration decl;
   const SingleImport singleImport;
   const ImportBind[] binds;
 
@@ -198,30 +217,30 @@ class ImportIdentifiers {
   }
 }
 
+/// Test for binding.
 unittest {
   auto visitor = visitImports(q{
       import foo : aa, cc, bb;
     });
   assert(visitor.importGroups[0][0].name == "foo");
-  writeln(visitor.importGroups[0][0].bindNames);
   assert(visitor.importGroups[0][0].bindNames == ["aa", "bb", "cc"]);
 }
 
 /// Decomposes multi module import decl to a list of single module with binds.
 ImportIdentifiers[] toIdentifiers(const ImportDeclaration decl) {
-  auto ret = decl.singleImports.map!(x => new ImportIdentifiers(decl, x)).array;
+  auto ret = decl.singleImports.map!(x => new ImportIdentifiers(x)).array;
   if (auto binds = decl.importBindings) {
-    ret ~= new ImportIdentifiers(decl, binds.singleImport, binds.importBinds);
+    ret ~= new ImportIdentifiers(binds.singleImport, binds.importBinds);
   }
   return ret;
 }
 
+/// Test for multiple modules and binding.
 unittest {
   auto visitor = visitImports(q{
       import foo, bar : aa, cc, bb;
     });
   auto ids = visitor.importGroups[0];
-  writeln(ids);
   assert(ids[0].name == "foo");
   assert(ids[0].bindNames == []);
   assert(ids[1].name == "bar");
@@ -231,4 +250,14 @@ unittest {
   sort(ids);
   assert(ids[0].name == "bar");
   assert(ids[1].name == "foo");
+}
+
+/// Test for merging redundant modules.
+unittest {
+  auto visitor = visitImports(q{
+      import foo : bar;
+      import foo : baz, bar;
+    });
+  assert(visitor.outputImports(visitor.importGroups[0]) ==
+         "import foo : bar, baz;");
 }

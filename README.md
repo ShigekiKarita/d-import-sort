@@ -20,28 +20,24 @@ sorted imports
 Example
 
 ```bash
-$ dub run -- ./source/dimportsort.d
+$ dub run -- ./source/*.d
 
-<<<<./source/dimportsort.d:2-7
-import std.algorithm : cmp, count, copy, map, setIntersection, sort;
-import std.array : array, join;
-import std.format : format;
-import std.stdio : writeln;
+<<<<./source/app.d:2-5
 import std.string : empty;
+import std.stdio : writeln;
+import std.file : readText;
 ----
-import std.algorithm : cmp, copy, count, map, setIntersection, sort;
-import std.array : array, join;
-import std.format : format;
+import std.file : readText;
 import std.stdio : writeln;
 import std.string : empty;
 >>>>
-<<<<./source/dimportsort.d:68-71
+
+<<<<./source/dimportsort.d:89-92
     import std.algorithm : find;
     import std.range : drop, take;
     import std.algorithm : maxElement, minElement, joiner, splitter;
 ----
-    import std.algorithm : find;
-    import std.algorithm : joiner, maxElement, minElement, splitter;
+    import std.algorithm : find, joiner, maxElement, minElement, splitter;
     import std.range : drop, take;
 >>>>
 ```
@@ -50,8 +46,8 @@ import std.string : empty;
 
 - [x] parse import
 - [x] simple sorted output
-- [ ] merge imports for redundant modules
-- [ ] option for overwrite files
+- [x] merge imports for redundant modules
+- [ ] option for overwriting files
 - [ ] color output
 - [ ] `diff` format output
 - [ ] max line length
