@@ -29,7 +29,7 @@ class ImportVisitor : ASTVisitor {
      decl = import declaration.
 
    Syntax:
-     
+
      importBind:
        Identifier ('=' Identifier)?
        ;
@@ -80,7 +80,7 @@ class ImportVisitor : ASTVisitor {
       auto indent = input[0 .. $ - input.find("import").length];
       auto output = outputImports(importGroups[i], indent);
       if (input == output) continue;
-      
+
       ret ~= format!"<<<<%s:%d-%d\n"(fileName, min, max)
           ~ input ~ "\n"
           ~ "----\n"
@@ -110,7 +110,7 @@ bool isConsective(const ImportDeclaration a, const ImportDeclaration b) {
 ImportVisitor visitImports(string sourceCode, string fileName = "unittest") {
   auto visitor = new ImportVisitor(sourceCode);
   LexerConfig config;
-  auto tokens = getTokensForParser(sourceCode, config, &visitor.cache); 
+  auto tokens = getTokensForParser(sourceCode, config, &visitor.cache);
   auto m = parseModule(tokens, fileName, &visitor.rba);
   visitor.visit(m);
   visitor.fileName = fileName;
