@@ -51,6 +51,7 @@ import std.string : empty;
 - [x] parse import
 - [x] simple sorted output
 - [ ] merge imports for redundant modules
+- [ ] option for overwrite files
 - [ ] color output
 - [ ] `diff` format output
 - [ ] max line length
