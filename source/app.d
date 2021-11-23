@@ -1,10 +1,9 @@
 module app;
 
-import std.string : empty;
-import std.stdio : writeln;
-import std.file : readText;
-
 import dimportsort;
+import std.file : readText;
+import std.stdio : writeln;
+import std.string : empty;
 
 int main(string[] args) {
   if (args.length == 0) {

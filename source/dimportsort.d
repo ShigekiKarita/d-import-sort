@@ -1,15 +1,15 @@
 module dimportsort;
 
+import dparse.ast;
+import dparse.lexer : getTokensForParser, LexerConfig, str, StringCache;
+import dparse.parser : parseModule;
+import dparse.rollback_allocator : RollbackAllocator;
 import std.algorithm : cmp, copy, count, equal, map, setIntersection, sort, uniq;
 import std.array : array, join;
 import std.format : format;
 import std.stdio : writeln;
 import std.string : empty, strip;
-
-import dparse.ast;
-import dparse.lexer : getTokensForParser, LexerConfig, str, StringCache;
-import dparse.parser : parseModule;
-import dparse.rollback_allocator : RollbackAllocator;
+import std.uni : sicmp;
 
 ///
 class ImportVisitor : ASTVisitor {
@@ -67,18 +67,19 @@ class ImportVisitor : ASTVisitor {
     }
   }
 
+  /// Returns: diff patch to sort import declarations (WIP).
   @safe pure
   string diff() {
-    import std.algorithm : find;
+    import std.algorithm : find, joiner, maxElement, minElement, splitter;
     import std.range : drop, take;
-    import std.algorithm : maxElement, minElement, joiner, splitter;
 
     string ret;
     foreach (i, decls; declGroups) {
       auto lines = decls.map!(d => d.tokens.map!(t => t.line)).joiner;
-      auto min = lines.minElement - 1;
-      auto max = lines.maxElement;
-      auto input = sourceCode.splitter('\n').drop(min).take(max - min).join("\n");
+      auto min = minElement(lines) - 1;
+      auto max = maxElement(lines);
+      auto input = sourceCode.splitter('\n').drop(min).take(max - min)
+          .join("\n");
 
       auto indent = input[0 .. $ - input.find("import").length];
       auto output = formatSortedImports(outputImports(importGroups[i]), indent);
@@ -107,7 +108,8 @@ class ImportVisitor : ASTVisitor {
 /// Checks declarations are consective.
 @nogc nothrow pure @safe
 bool isConsective(const Declaration a, const Declaration b) {
-  return !setIntersection(a.tokens.map!"a.line + 1", b.tokens.map!"a.line").empty;
+  return !setIntersection(a.tokens.map!"a.line + 1", b.tokens.map!"a.line")
+      .empty;
 }
 
 ImportVisitor visitImports(string sourceCode, string fileName = "unittest") {
@@ -180,8 +182,8 @@ class ImportIdentifiers {
   const ImportBind[] binds;
 
   nothrow pure @safe
-  string name() const {
-    return singleImport.identifierChain.identifiers.map!"a.text".join(".");
+  string fullName() const {
+    return names().join(".");
   }
 
   @nogc nothrow pure @safe
@@ -202,18 +204,20 @@ class ImportIdentifiers {
   /// Returns: string for debugging.
   pure @safe
   override string toString() const {
-    return format!"%s(name=%s, binds=%s)"(typeof(this).stringof, name, bindNames);
+    return format!"%s(name=%s, binds=%s)"(
+        typeof(this).stringof, fullName, bindNames);
   }
 
   /// Compares identifiers for sorting.
-  @nogc nothrow pure @safe
+  nothrow pure @safe
   int opCmp(ImportIdentifiers that) const {
-    // First sort by the module name w/o attrs.
-    auto ret = cmp(this.names, that.names);
+    // First sort by the module name w/o attrs. Note that in D-Scanner,
+    // dscanner/analysis/imports_sortedness.d uses sicmp instead of cmp.
+    auto ret = sicmp(this.fullName, that.fullName);
     if (ret != 0) {
       return ret;
     }
-    // Then sort by attrs.
+    // Then sort by attrs. cmp is OK because attributes are always lowercased.
     return cmp(this.attrs, that.attrs);
   }
 }
@@ -223,13 +227,13 @@ unittest {
   auto visitor = visitImports(q{
       import foo : aa, bb, cc;
     });
-  assert(visitor.importGroups[0][0].name == "foo");
+  assert(visitor.importGroups[0][0].fullName == "foo");
   assert(equal(visitor.importGroups[0][0].bindNames, ["aa", "bb", "cc"]));
 }
 
 /// Decomposes multi module import decl to a list of single module with binds.
 ImportIdentifiers[] toIdentifiers(const Declaration decl) {
-  auto idecl = decl.importDeclaration;
+  const idecl = decl.importDeclaration;
   assert(idecl !is null, "not import declaration.");
   auto ret = idecl.singleImports.map!(
       x => new ImportIdentifiers(decl.attributes, x)).array;
@@ -247,9 +251,9 @@ unittest {
       public static import bar;
     });
   auto ids = visitor.importGroups[0];
-  assert(ids[0].name == "foo");
+  assert(ids[0].fullName == "foo");
   assert(equal(ids[0].attrs, ["public"]));
-  assert(ids[1].name == "bar");
+  assert(ids[1].fullName == "bar");
   assert(equal(ids[1].attrs, ["public", "static"]));
 }
 
@@ -261,9 +265,9 @@ unittest {
           cc;
     });
   auto ids = visitor.importGroups[0];
-  assert(ids[0].name == "foo");
+  assert(ids[0].fullName == "foo");
   assert(ids[0].bindNames.empty);
-  assert(ids[1].name == "bar");
+  assert(ids[1].fullName == "bar");
   assert(equal(ids[1].bindNames, ["aa", "bb", "cc"]));
 }
 
@@ -276,10 +280,10 @@ unittest {
     });
   auto ids = visitor.importGroups[0];
   sort(ids);
-  assert(ids[0].name == "bar");
-  assert(ids[1].name == "foo");
-  assert(ids[2].name == "foo.bar");
-  assert(ids[3].name == "foo.bar");
+  assert(ids[0].fullName == "bar");
+  assert(ids[1].fullName == "foo");
+  assert(ids[2].fullName == "foo.bar");
+  assert(ids[3].fullName == "foo.bar");
   assert(equal(ids[3].attrs, ["static"]));
 }
 
@@ -320,7 +324,7 @@ SortedImport[] outputImports(ImportIdentifiers[] idents) {
   foreach (id; idents) {
     auto attrs = id.attrs.array.dup;
     sort(attrs);
-    auto o = SortedImport(id.name, id.bindNames.array.dup, attrs);
+    auto o = SortedImport(id.fullName, id.bindNames.array.dup, attrs);
     if (outputs.empty || !outputs[$-1].canMerge(o)) {
       outputs ~= o;
       continue;
@@ -341,7 +345,7 @@ string formatSortedImports(SortedImport[] outputs, string indent = "") {
     }
     ret ~= "import " ~ o.mod;
     if (!o.binds.empty) {
-      sort(o.binds);
+      sort!((a, b) => sicmp(a, b) < 0)(o.binds);
       ret ~= " : " ~ o.binds.uniq.join(", ");
     }
     ret ~= ";\n";

@@ -5,6 +5,7 @@
 !*.md
 !dub.json
 !.gitignore
+!dscanner.ini
 
 .dub
 docs.json

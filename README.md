@@ -50,10 +50,12 @@ import std.string : empty;
   - [x] selective import e.g. `import foo : bar;`
   - [x] public import e.g. `public import foo;`
   - [x] static import e.g. `static import foo;`
+  - [ ] package attribute e.g. `package(app) import foo;`.
   - [ ] renamed import e.g. `import foo = bar;`
 - [x] simple sorted output
 - [x] merge imports for redundant modules
 - [ ] option for overwriting files
+- [ ] option for keeping comments
 - [ ] color output
 - [ ] `diff` format output
 - [ ] max line length
