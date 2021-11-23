@@ -58,7 +58,7 @@ import std.string : empty;
   - [x] selective import e.g. `import foo : bar;`
   - [x] public import e.g. `public import foo;`
   - [x] static import e.g. `static import foo;`
-  - [ ] package attribute e.g. `package(app) import foo;`.
+  - [x] package attribute e.g. `package(app) import foo;`.
   - [ ] renamed import e.g. `import foo = bar;`
 - [x] simple sorted output
 - [x] merge imports for redundant modules

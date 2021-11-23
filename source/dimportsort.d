@@ -166,6 +166,31 @@ import foo;
 `);
 }
 
+nothrow pure @safe
+string attributeStringOf(const Attribute attr) {
+  auto s = str(attr.attribute.type);
+  if (s != "package") return s;
+  return "package("
+      ~ attr.identifierChain.identifiers.map!"a.text".join(".")
+      ~ ")";
+}
+
+/// Test for import attributes.
+unittest {
+  auto visitor = visitImports(q{
+      public import foo;
+      public static import bar;
+      package(std.regex) import baz;
+    });
+  auto ids = visitor.importGroups[0];
+  assert(ids[0].fullName == "foo");
+  assert(equal(ids[0].attrs, ["public"]));
+  assert(ids[1].fullName == "bar");
+  assert(equal(ids[1].attrs, ["public", "static"]));
+  assert(ids[2].fullName == "baz");
+  assert(equal(ids[2].attrs, ["package(std.regex)"]));
+}
+
 /// Data type for identifiers in an import declaration.
 /// import mod : binds, ...;
 class ImportIdentifiers {
@@ -196,9 +221,9 @@ class ImportIdentifiers {
     return binds.map!"a.left.text";
   }
 
-  @nogc nothrow pure @safe
+  nothrow pure @safe
   auto attrs() const {
-    return attributes.map!(a => str(a.attribute.type));
+    return attributes.map!attributeStringOf;
   }
 
   /// Returns: string for debugging.
@@ -242,19 +267,6 @@ ImportIdentifiers[] toIdentifiers(const Declaration decl) {
         decl.attributes, binds.singleImport, binds.importBinds);
   }
   return ret;
-}
-
-/// Test for import attributes.
-unittest {
-  auto visitor = visitImports(q{
-      public import foo;
-      public static import bar;
-    });
-  auto ids = visitor.importGroups[0];
-  assert(ids[0].fullName == "foo");
-  assert(equal(ids[0].attrs, ["public"]));
-  assert(ids[1].fullName == "bar");
-  assert(equal(ids[1].attrs, ["public", "static"]));
 }
 
 /// Test for multiple modules and binding.
