@@ -82,7 +82,7 @@ class ImportVisitor : ASTVisitor {
           .join("\n");
 
       auto indent = input[0 .. $ - input.find("import").length];
-      auto output = formatSortedImports(outputImports(importGroups[i]), indent);
+      auto output = formatSortedImports(sortedImports(importGroups[i]), indent);
       if (input == output) continue;
 
       ret ~= format!"<<<<%s:%d-%d\n"(fileName, min, max)
@@ -208,7 +208,11 @@ class ImportIdentifiers {
 
   nothrow pure @safe
   string fullName() const {
-    return names().join(".");
+    string prefix = singleImport.rename.text;
+    if (!prefix.empty) {
+      prefix ~= " = ";
+    }
+    return prefix ~ names().join(".");
   }
 
   @nogc nothrow pure @safe
@@ -218,7 +222,8 @@ class ImportIdentifiers {
 
   @nogc nothrow pure @safe
   auto bindNames() const {
-    return binds.map!"a.left.text";
+    return binds.map!(b => b.left.text ~
+                      (b.right.text.empty ? "" : " = " ~ b.right.text));
   }
 
   nothrow pure @safe
@@ -229,8 +234,14 @@ class ImportIdentifiers {
   /// Returns: string for debugging.
   pure @safe
   override string toString() const {
-    return format!"%s(name=%s, binds=%s)"(
+    return format!"%s(name=\"%s\", binds=\"%s\")"(
         typeof(this).stringof, fullName, bindNames);
+  }
+
+  nothrow pure @safe
+  private string cmpName() const {
+    const rename = singleImport.rename.text;
+    return rename.empty ? fullName : rename;
   }
 
   /// Compares identifiers for sorting.
@@ -247,13 +258,29 @@ class ImportIdentifiers {
   }
 }
 
-/// Test for binding.
+/// Test for selective imports.
 unittest {
   auto visitor = visitImports(q{
       import foo : aa, bb, cc;
     });
   assert(visitor.importGroups[0][0].fullName == "foo");
   assert(equal(visitor.importGroups[0][0].bindNames, ["aa", "bb", "cc"]));
+}
+
+/// Test for renamed imports.
+unittest {
+  auto visitor = visitImports(q{
+      import foo = bar;
+      import bar = foo;
+      import baz.foo;
+      import zz : f = foo;
+    });
+  // Sorting is based on the renamed name if exists.
+  sort(visitor.importGroups[0]);
+  assert(visitor.importGroups[0][0].fullName == "bar = foo");
+  assert(visitor.importGroups[0][1].fullName == "baz.foo");
+  assert(visitor.importGroups[0][2].fullName == "foo = bar");
+  assert(visitor.importGroups[0][3].fullName == "zz");
 }
 
 /// Decomposes multi module import decl to a list of single module with binds.
@@ -326,9 +353,11 @@ unittest {
 }
 
 /// Merges and sorts import identifiers for outputs.
-nothrow pure @safe
-SortedImport[] outputImports(ImportIdentifiers[] idents) {
+pure @safe
+SortedImport[] sortedImports(ImportIdentifiers[] idents) {
   import std.range : chain, only;
+  import std.string : split;
+
   // TODO: support max line length.
   sort(idents);
   // Merge redundant modules.
@@ -343,7 +372,23 @@ SortedImport[] outputImports(ImportIdentifiers[] idents) {
     }
     outputs[$-1].binds ~= o.binds;
   }
+  foreach (ref o; outputs) {
+    o.binds = sort!((a, b) => sicmp(a, b) < 0)(o.binds)
+                    .uniq.array;
+  }
   return outputs;
+}
+
+// Test with renamed selective imports.
+unittest {
+  auto visitor = visitImports(q{
+      import foo : bar = foo;
+      import foo : zoo = bar;
+      import foo : baaz;
+      import foo : aar;
+    });
+  assert(sortedImports(visitor.importGroups[0]).formatSortedImports ==
+         "import foo : aar, baaz, bar = foo, zoo = bar;");
 }
 
 /// Formats output imports into a string.
@@ -357,8 +402,7 @@ string formatSortedImports(SortedImport[] outputs, string indent = "") {
     }
     ret ~= "import " ~ o.mod;
     if (!o.binds.empty) {
-      sort!((a, b) => sicmp(a, b) < 0)(o.binds);
-      ret ~= " : " ~ o.binds.uniq.join(", ");
+      ret ~= " : " ~ o.binds.join(", ");
     }
     ret ~= ";\n";
   }
@@ -372,7 +416,7 @@ unittest {
       import foo : bar;
       import foo : baz, bar;
     });
-  assert(outputImports(visitor.importGroups[0]).formatSortedImports ==
+  assert(sortedImports(visitor.importGroups[0]).formatSortedImports ==
          "import foo : bar, baz;");
 }
 
@@ -385,7 +429,7 @@ unittest {
       public import foo : baz;
       import bar;
     });
-  assert(outputImports(visitor.importGroups[0]).formatSortedImports == q{
+  assert(sortedImports(visitor.importGroups[0]).formatSortedImports == q{
 import bar;
 import foo : bar;
 public import foo : bar, baz;

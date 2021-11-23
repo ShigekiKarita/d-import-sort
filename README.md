@@ -52,14 +52,14 @@ import std.string : empty;
 
 ## TODO
 
-- [ ] fully support import declarations
+- [x] fully support import declarations
   - [x] single import e.g. `import foo;`
   - [x] multiple import e.g. `import foo, bar;`
   - [x] selective import e.g. `import foo : bar;`
   - [x] public import e.g. `public import foo;`
   - [x] static import e.g. `static import foo;`
   - [x] package attribute e.g. `package(app) import foo;`.
-  - [ ] renamed import e.g. `import foo = bar;`
+  - [x] renamed import e.g. `import foo = bar;`
 - [x] simple sorted output
 - [x] merge imports for redundant modules
 - [ ] option for overwriting files
