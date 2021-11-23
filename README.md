@@ -44,10 +44,21 @@ import std.string : empty;
 
 ## TODO
 
-- [x] parse import
+- [ ] fully support import declarations
+  - [x] single import e.g. `import foo;`
+  - [x] multiple import e.g. `import foo, bar;`
+  - [x] selective import e.g. `import foo : bar;`
+  - [x] public import e.g. `public import foo;`
+  - [x] static import e.g. `static import foo;`
+  - [ ] renamed import e.g. `import foo = bar;`
 - [x] simple sorted output
 - [x] merge imports for redundant modules
 - [ ] option for overwriting files
 - [ ] color output
 - [ ] `diff` format output
 - [ ] max line length
+
+## Links
+
+- https://dlang.org/spec/module.html
+- https://libdparse.dlang.io/grammar.html#importDeclaration
