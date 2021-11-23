@@ -1,5 +1,13 @@
 # d-import-sort
 
+[![D](https://github.com/ShigekiKarita/d-import-sort/actions/workflows/d.yml/badge.svg)](https://github.com/ShigekiKarita/d-import-sort/actions/workflows/d.yml)
+[![codecov](https://codecov.io/gh/ShigekiKarita/d-import-sort/branch/master/graph/badge.svg?token=9X68LYF7IL)](https://codecov.io/gh/ShigekiKarita/d-import-sort)
+[![Dub downloads](https://img.shields.io/dub/dt/d-import-sort.svg)](http://code.dlang.org/packages/d-import-sort)
+[![Dub downloads](https://img.shields.io/dub/dm/d-import-sort.svg)](http://code.dlang.org/packages/d-import-sort)
+[![License](https://img.shields.io/dub/l/d-import-sort.svg)](http://code.dlang.org/packages/d-import-sort)
+[![Latest version](https://img.shields.io/dub/v/d-import-sort.svg)](http://code.dlang.org/packages/d-import-sort)
+
+
 A tool for sorting import declarations in D.
 
 ## Usage
