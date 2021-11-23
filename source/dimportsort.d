@@ -11,11 +11,11 @@ import dparse.lexer : getTokensForParser, LexerConfig, str, StringCache;
 import dparse.parser : parseModule;
 import dparse.rollback_allocator : RollbackAllocator;
 
-
 ///
 class ImportVisitor : ASTVisitor {
 
   ///
+  @nogc nothrow pure
   this(string sourceCode) {
     this.cache = StringCache(StringCache.defaultBucketCount);
     this.sourceCode = sourceCode;
@@ -57,17 +57,17 @@ class ImportVisitor : ASTVisitor {
   override void visit(const Declaration decl) {
     decl.accept(this);
     if (auto idecl = decl.importDeclaration) {
-      if (importGroups.empty ||
-          !isConsective(declGroups[$-1][$-1], decl)) {
+      if (importGroups.empty || !isConsective(declGroups[$-1][$-1], decl)) {
         declGroups ~= [decl];
         importGroups ~= toIdentifiers(decl);
         return;
       }
       declGroups[$-1] ~= decl;
-      importGroups[$-1] ~= toIdentifiers(decl);      
+      importGroups[$-1] ~= toIdentifiers(decl);
     }
   }
 
+  @safe pure
   string diff() {
     import std.algorithm : find;
     import std.range : drop, take;
@@ -81,7 +81,7 @@ class ImportVisitor : ASTVisitor {
       auto input = sourceCode.splitter('\n').drop(min).take(max - min).join("\n");
 
       auto indent = input[0 .. $ - input.find("import").length];
-      auto output = outputImports(importGroups[i], indent);
+      auto output = formatSortedImports(outputImports(importGroups[i]), indent);
       if (input == output) continue;
 
       ret ~= format!"<<<<%s:%d-%d\n"(fileName, min, max)
@@ -94,51 +94,6 @@ class ImportVisitor : ASTVisitor {
   }
 
  private:
-  
-  struct Output {
-    string mod;
-    string[] binds;
-    string[] attrs;
-
-    bool canMerge(Output that) const {
-      return this.mod == that.mod && equal(this.attrs, that.attrs);
-    }
-  }
-
-  string outputImports(ImportIdentifiers[] idents, string indent = "") const {
-    import std.range : chain, only;
-    // TODO: support max line length.
-    sort(idents);
-    // Merge redundant modules.
-    Output[] outputs;
-    foreach (id; idents) {
-      auto attrs = id.attrs.array.dup;
-      sort(attrs);
-      auto o = Output(id.name, id.bindNames.array.dup, attrs);
-      if (outputs.empty || !outputs[$-1].canMerge(o)) {
-        outputs ~= o;
-        continue;
-      }
-      outputs[$-1].binds ~= o.binds;
-    }
-    
-    string ret;
-    foreach (o; outputs) {
-      ret ~= indent;
-      if (!o.attrs.empty) {
-        ret ~= o.attrs.join(" ") ~ " ";
-      }
-      ret ~= "import " ~ o.mod;
-      if (!o.binds.empty) {
-        sort(o.binds);
-        ret ~= " : " ~ o.binds.uniq.join(", ");
-      }
-      ret ~= ";\n";
-    }
-    // Remove the last new line (\n).
-    return ret[0 .. $-1];
-  }
-  
   string sourceCode;
   string fileName;
   const(Declaration)[][] declGroups;
@@ -212,44 +167,54 @@ import foo;
 /// Data type for identifiers in an import declaration.
 /// import mod : binds, ...;
 class ImportIdentifiers {
+  @nogc nothrow pure @safe
   this(const Attribute[] attributes, const SingleImport si,
        const ImportBind[] binds = []) {
     this.attributes = attributes;
     this.singleImport = si;
     this.binds = binds;
   }
-  
+
   const Attribute[] attributes;
   const SingleImport singleImport;
   const ImportBind[] binds;
 
-  pure nothrow @safe
+  nothrow pure @safe
   string name() const {
     return singleImport.identifierChain.identifiers.map!"a.text".join(".");
   }
 
-  pure nothrow @safe
+  @nogc nothrow pure @safe
+  auto names() const {
+    return singleImport.identifierChain.identifiers.map!"a.text";
+  }
+
+  @nogc nothrow pure @safe
   auto bindNames() const {
     return binds.map!"a.left.text";
   }
 
+  @nogc nothrow pure @safe
   auto attrs() const {
     return attributes.map!(a => str(a.attribute.type));
   }
 
+  /// Returns: string for debugging.
   pure @safe
   override string toString() const {
     return format!"%s(name=%s, binds=%s)"(typeof(this).stringof, name, bindNames);
   }
 
+  /// Compares identifiers for sorting.
+  @nogc nothrow pure @safe
   int opCmp(ImportIdentifiers that) const {
     // First sort by the module name w/o attrs.
-    auto ret = cmp(this.name, that.name); 
+    auto ret = cmp(this.names, that.names);
     if (ret != 0) {
       return ret;
     }
     // Then sort by attrs.
-    return cmp(this.attrs.join(" "), that.attrs.join(" "));
+    return cmp(this.attrs, that.attrs);
   }
 }
 
@@ -291,18 +256,98 @@ unittest {
 /// Test for multiple modules and binding.
 unittest {
   auto visitor = visitImports(q{
-      import foo, bar : aa, bb, cc;
+      import foo,
+          bar : aa, bb,
+          cc;
     });
   auto ids = visitor.importGroups[0];
   assert(ids[0].name == "foo");
   assert(ids[0].bindNames.empty);
   assert(ids[1].name == "bar");
   assert(equal(ids[1].bindNames, ["aa", "bb", "cc"]));
+}
 
-  // Test opCmp in sort.
+// Test opCmp in sort.
+unittest {
+  auto visitor = visitImports(q{
+      import foo.bar;
+      import foo, bar : aa, bb, cc;
+      static import foo.bar;
+    });
+  auto ids = visitor.importGroups[0];
   sort(ids);
   assert(ids[0].name == "bar");
   assert(ids[1].name == "foo");
+  assert(ids[2].name == "foo.bar");
+  assert(ids[3].name == "foo.bar");
+  assert(equal(ids[3].attrs, ["static"]));
+}
+
+/// Data type to store a sorted import declaration.
+struct SortedImport {
+  string mod;
+  // These must be sorted.
+  string[] binds;
+  string[] attrs;
+}
+
+/// Checks if two sorted imports can be merged into one.
+@nogc nothrow pure @safe
+bool canMerge(SortedImport a, SortedImport b) {
+  return a.mod == b.mod
+      && equal(a.attrs, b.attrs)  // Cannot merge diff attributes.
+      && (a.binds.empty == b.binds.empty);  // Both selective or non-selective.
+}
+
+unittest {
+  assert(SortedImport("a").canMerge(SortedImport("a")));
+  assert(SortedImport("a", ["b"]).canMerge(SortedImport("a", ["c"])));
+  assert(!SortedImport("a", ["b"]).canMerge(SortedImport("a", [])));
+  assert(SortedImport("a", [], ["public"]).canMerge(
+      SortedImport("a", [], ["public"])));
+  assert(!SortedImport("a", [], []).canMerge(
+      SortedImport("a", [], ["public"])));
+}
+
+/// Merges and sorts import identifiers for outputs.
+nothrow pure @safe
+SortedImport[] outputImports(ImportIdentifiers[] idents) {
+  import std.range : chain, only;
+  // TODO: support max line length.
+  sort(idents);
+  // Merge redundant modules.
+  SortedImport[] outputs;
+  foreach (id; idents) {
+    auto attrs = id.attrs.array.dup;
+    sort(attrs);
+    auto o = SortedImport(id.name, id.bindNames.array.dup, attrs);
+    if (outputs.empty || !outputs[$-1].canMerge(o)) {
+      outputs ~= o;
+      continue;
+    }
+    outputs[$-1].binds ~= o.binds;
+  }
+  return outputs;
+}
+
+/// Formats output imports into a string.
+nothrow pure @safe
+string formatSortedImports(SortedImport[] outputs, string indent = "") {
+  string ret;
+  foreach (o; outputs) {
+    ret ~= indent;
+    if (!o.attrs.empty) {
+      ret ~= o.attrs.join(" ") ~ " ";
+    }
+    ret ~= "import " ~ o.mod;
+    if (!o.binds.empty) {
+      sort(o.binds);
+      ret ~= " : " ~ o.binds.uniq.join(", ");
+    }
+    ret ~= ";\n";
+  }
+  // Remove the last new line (\n).
+  return ret[0 .. $-1];
 }
 
 /// Test for merging redundant modules.
@@ -311,7 +356,7 @@ unittest {
       import foo : bar;
       import foo : baz, bar;
     });
-  assert(visitor.outputImports(visitor.importGroups[0]) ==
+  assert(outputImports(visitor.importGroups[0]).formatSortedImports ==
          "import foo : bar, baz;");
 }
 
@@ -324,8 +369,7 @@ unittest {
       public import foo : baz;
       import bar;
     });
-  writeln(visitor.outputImports(visitor.importGroups[0]));
-  assert(visitor.outputImports(visitor.importGroups[0]) == q{
+  assert(outputImports(visitor.importGroups[0]).formatSortedImports == q{
 import bar;
 import foo : bar;
 public import foo : bar, baz;
